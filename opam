@@ -1,0 +1,16 @@
+opam-version: "1.2"
+name:         "auth-builder"
+version:      "0.0.1"
+homepage:     "https://github.com/Jocbe/ocaml-auth-builder"
+dev-repo:     "https://github.com/Jocbe/ocaml-auth-builder.git"
+bug-reports:  "https://github.com/Jocbe/ocaml-auth-builder/issues"
+author:       [ "Johann Beleites" ]
+maintainer:   [ "Johann Beleites" ]
+
+
+depends: [
+  "x509"
+  "tls"
+]
+
+available: [ocaml-version >= "4.02.1" ]
