@@ -1,0 +1,24 @@
+# OASIS_START
+# DO NOT EDIT (digest: b4b02ccd17d642687b144eee17162abb)
+# Ignore VCS directories, you can use the same kind of rule outside
+# OASIS_START/STOP if you want to exclude directories that contains
+# useless stuff for the build process
+true: annot, bin_annot
+<**/.svn>: -traverse
+<**/.svn>: not_hygienic
+".bzr": -traverse
+".bzr": not_hygienic
+".hg": -traverse
+".hg": not_hygienic
+".git": -traverse
+".git": not_hygienic
+"_darcs": -traverse
+"_darcs": not_hygienic
+# Library auth-builder
+"lib/auth-builder.cmxs": use_auth-builder
+"lib/abuilder.cmx": for-pack(Auth-builder)
+<lib/*.ml{,i,y}>: pkg_lwt
+<lib/*.ml{,i,y}>: pkg_lwt.syntax
+<lib/*.ml{,i,y}>: pkg_tls
+<lib/*.ml{,i,y}>: pkg_x509
+# OASIS_STOP

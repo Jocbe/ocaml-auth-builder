@@ -7,6 +7,13 @@ bug-reports:  "https://github.com/Jocbe/ocaml-auth-builder/issues"
 author:       [ "Johann Beleites" ]
 maintainer:   [ "Johann Beleites" ]
 
+build: [
+  ["ocaml" "setup.ml" "-configure" "--prefix" prefix]
+  ["ocaml" "setup.ml" "-build"]
+]
+
+install: ["ocaml" "setup.ml" "-install"]
+remove: ["ocamlfind" "remove" "auth-builder"]
 
 depends: [
   "x509"

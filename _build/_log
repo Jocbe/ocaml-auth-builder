@@ -1,0 +1,12 @@
+### Starting build.
+# Target: lib/auth-builder.cmo, tags: { annot, bin_annot, byte, debug, extension:cmo, file:lib/auth-builder.cmo, ocaml, pack, quiet, traverse }
+/home/jocbe/.opam/4.02.1/bin/ocamlfind ocamlc -pack -g -annot -bin-annot -o lib/auth-builder.cmo
+# Target: lib/auth-builder.cma, tags: { annot, bin_annot, byte, debug, extension:cma, file:lib/auth-builder.cma, library, link, ocaml, quiet, traverse }
+/home/jocbe/.opam/4.02.1/bin/ocamlfind ocamlc -a lib/auth-builder.cmo -o lib/auth-builder.cma
+# Target: lib/auth-builder.cmx, tags: { annot, bin_annot, debug, extension:cmx, file:lib/auth-builder.cmx, native, ocaml, pack, quiet, traverse }
+touch lib/auth-builder.mli  ; if  /home/jocbe/.opam/4.02.1/bin/ocamlfind ocamlopt -pack -g -annot -bin-annot -o lib/auth-builder.cmx  ; then  rm -f lib/auth-builder.mli  ; else  rm -f lib/auth-builder.mli  ; exit 1; fi
+# Target: lib/auth-builder.cmxa, tags: { annot, bin_annot, debug, extension:cmxa, file:lib/auth-builder.cmxa, library, link, native, ocaml, quiet, traverse }
+/home/jocbe/.opam/4.02.1/bin/ocamlfind ocamlopt -a lib/auth-builder.cmx -o lib/auth-builder.cmxa
+# Target: lib/auth-builder.cmxs, tags: { annot, bin_annot, debug, extension:cmxs, file:lib/auth-builder.cmxs, library, link, native, ocaml, quiet, shared, traverse, use_auth-builder }
+/home/jocbe/.opam/4.02.1/bin/ocamlfind ocamlopt -shared lib/auth-builder.cmxa lib/auth-builder.cmx -o lib/auth-builder.cmxs
+# Compilation successful.

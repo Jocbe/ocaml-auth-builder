@@ -1,0 +1,19 @@
+OASISFormat: 0.4
+Name:        ocaml-auth-builder
+Version:     0.0.1
+Synopsis:    Advanced authenticator builder for ocaml-tls and ocaml-x509
+Authors:     Johann Beleites <johann@atbel.de>
+Maintainers: Johann Beleites <johann@atbel.de>
+Homepage:    https://github.com/Jocbe/ocaml-auth-builder
+License:     FreeBSD
+Plugins:     META (0.4), DevFiles (0.4)
+BuildTools:  ocamlbuild
+Description:
+  Advanced authenticator builder
+
+Library "auth-builder"
+  Path            : lib/
+  Modules         : Abuilder
+  Pack            : true
+  BuildDepends    : x509, tls, lwt, lwt.syntax
+

@@ -1,0 +1,12 @@
+# OASIS_START
+# DO NOT EDIT (digest: 965cae50da49fbb6bc97e0f53d8e5b7c)
+version = "0.0.1"
+description = "Advanced authenticator builder for ocaml-tls and ocaml-x509"
+requires = "x509 tls lwt lwt.syntax"
+archive(byte) = "auth-builder.cma"
+archive(byte, plugin) = "auth-builder.cma"
+archive(native) = "auth-builder.cmxa"
+archive(native, plugin) = "auth-builder.cmxs"
+exists_if = "auth-builder.cma"
+# OASIS_STOP
+
