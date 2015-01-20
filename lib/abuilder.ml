@@ -11,6 +11,9 @@ end
 module Conf = struct
   type t = Authlet.t list
 
+  let newc = []
+  let from_authlet authlet = [authlet]
+
   let add conf authlet =
     authlet :: conf
   
@@ -27,24 +30,27 @@ module Conf = struct
       | `Logger log -> return X509.Authenticator.null
     in
     let authenticate ?host:host (c, stack) auth =
-      auth ?host:stack (c, stack)
+      auth ?host:host (c, stack)
     in
     (* Compare the returned certs to each other? *)
     let filterp = fun v -> 
-      match v with
-      | `Ok _ -> false
-      | _ -> true
+      let ret = match v with
+        | `Ok _ -> false
+        | _ -> true
+      in
+      return ret
     in
    
     lwt authl = Lwt_list.map_p compile conf in
-    fun ?host:host (c, stack) -> 
-      return (`Ok c)
-      (*lwt resl = Lwt_list.map_p (authenticate ?host:host (c, stack)) authl in
-      lwt errl = Lwt_list.filter_p filterp resl in
-      (*if List.length errl > 0 then
-        errl.(0)
-      else *)
-	resl.(0);;*)
+    return (
+      fun ?host:host (c, stack) -> 
+        lwt resl = Lwt_list.map_p (authenticate ?host:host (c, stack)) authl in
+        lwt errl = Lwt_list.filter_p filterp resl in
+        if List.length errl > 0 then
+          return (List.nth errl 0)
+        else 
+  	  return (List.nth resl 0)
+    )
 end
 
 
