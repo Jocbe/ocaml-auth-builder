@@ -1,0 +1,10 @@
+_build/
+setup.data
+setup.log
+log
+
+*.native
+*.byte
+*.docdir
+
+/random
