@@ -13,11 +13,12 @@ build: [
 ]
 
 install: ["ocaml" "setup.ml" "-install"]
-remove: ["ocamlfind" "remove" "auth-builder"]
+remove: ["ocamlfind" "remove" "abuilder"]
 
 depends: [
   "x509"
   "tls"
+  "lwt"
 ]
 
 available: [ocaml-version >= "4.02.1" ]

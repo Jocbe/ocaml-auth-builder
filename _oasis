@@ -11,9 +11,9 @@ BuildTools:  ocamlbuild
 Description:
   Advanced authenticator builder
 
-Library "auth-builder"
+Library "abuilder"
   Path            : lib/
   Modules         : Abuilder
-  Pack            : true
+  Pack            : false
   BuildDepends    : x509, tls, lwt, lwt.syntax
 
