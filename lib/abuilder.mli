@@ -1,9 +1,14 @@
 
 module Authlet : sig
-  type t = [ `None | `Logger of string ]
+  type t = [ 
+    | `None 
+    | `Logger of string 
+    | `Remote of (string * int) * Certificate.certificate option
+  ]
   
   val null : t
   val logger : string -> t
+  val remote : ?cert:Certificate.certificate -> ?port:int -> string -> t
 end
 
 module Conf : sig
