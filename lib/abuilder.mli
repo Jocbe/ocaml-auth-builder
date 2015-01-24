@@ -12,14 +12,16 @@ module Authlet : sig
 end
 
 module Conf : sig
-  type t = Authlet.t list
+  type c_mode = [ `Strict | `Allow_failures ] 
+  type composition = [ `Comp of (int * int * c_mode) * ((Authlet.t * int) list) | `Single of Authlet.t ]
+  type t = composition list
   
-  val newc : t
+  val new_conf : t
   val from_authlet : Authlet.t -> t
 
-  val add : t -> Authlet.t -> t
+  val add_comp : t -> composition -> t
   val conf_to_string : t -> string
   val string_to_conf : string -> t
-  val build : t -> X509.Authenticator.t Lwt.t
+  val build : t -> (string * int) -> X509.Authenticator.t Lwt.t
 end
 
