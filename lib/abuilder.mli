@@ -11,15 +11,26 @@ module Authlet : sig
   val remote : ?cert:Certificate.certificate -> ?port:int -> string -> t
 end
 
+module Comp : sig
+  type mode = [ `Strict | `Allow_failures ] 
+  type t = [ `Comp of ( int * int * mode ) * (( Authlet.t * int ) list ) | `Single of Authlet.t ]
+
+  val single : Authlet.t -> t
+  val comp : ( int * int * mode ) -> ( Authlet.t * int ) -> t
+  val add : t -> ( Authlet.t * int) -> t
+  val update_comp_data : t -> ( int * int * mode) -> t
+
+end
+
 module Conf : sig
-  type c_mode = [ `Strict | `Allow_failures ] 
-  type composition = [ `Comp of (int * int * c_mode) * ((Authlet.t * int) list) | `Single of Authlet.t ]
-  type t = composition list
+  type t = Comp.t list
   
   val new_conf : t
   val from_authlet : Authlet.t -> t
-
-  val add_comp : t -> composition -> t
+  val from_comp : Comp.t -> t
+  val add_authlet : t -> Authlet.t -> t
+  val add : t -> Comp.t -> t
+  
   val conf_to_string : t -> string
   val string_to_conf : string -> t
   val build : t -> (string * int) -> X509.Authenticator.t Lwt.t

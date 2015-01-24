@@ -53,24 +53,35 @@ module Authenticator = struct
       end
 end
 
-module Conf = struct
+module Comp = struct
+  type mode = [ `Strict | `Allow_failures ] 
   (* (number of authenticators to execute * number of authenticators that need to return `Ok) * ((authlet * priority (lower = higher priority)) list)  *)
-  type c_mode = [ `Strict | `Allow_failures ] 
-  type composition = [ `Comp of (int * int * c_mode) * ((Authlet.t * int) list) | `Single of Authlet.t ]
-  type t = composition list
+  type t = [ `Comp of (int * int * mode) * ((Authlet.t * int) list) | `Single of Authlet.t ]
+
+  let single authlet = `Single authlet
+  let comp (num_execute, num_ok, mode) (authlet, priority) = `Comp ((num_execute, num_ok, mode), [(authlet, priority)])
+  let add comp p_authlet = 
+    match comp with
+    | `Comp (c_data, aas) -> `Comp (c_data, p_authlet :: aas)
+    | _ -> raise (Invalid_argument "Expected `Comp composition")
+  let update_comp_data comp new_data = 
+    match comp with
+    | `Comp (c_data, aas) -> `Comp (new_data, aas)
+    | _ -> raise (Invalid_argument "Expected `Comp composition")
+
+end
+
+module Conf = struct
+  type t = Comp.t list
 
   let new_conf = []
   let from_authlet authlet = [`Single authlet]
-
-  let add_single conf authlet =
-    `Single authlet :: conf
-
-  let add_comp conf comp = 
-    comp :: conf
+  let from_comp comp = [comp]
+  let add_authlet conf authlet = (`Single authlet) :: conf
+  let add conf comp = comp :: conf
   
   let conf_to_string conf =
-    "NOT YET IMPLEMENTED"
-  
+    "NOT YET IMPLEMENTED" 
   let string_to_conf str =
     [`Single `None]
 
