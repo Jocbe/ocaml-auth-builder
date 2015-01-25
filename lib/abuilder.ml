@@ -6,6 +6,14 @@ module Authlet = struct
     | `Logger of string
     | `Remote of (string * int) * Certificate.certificate option
   ]
+  
+  type self_contained = [
+    | `None
+    | `Logger of string
+    | `Remote of (string * int) * Certificate.certificate option
+  ]
+
+  type gen = [ t | self_contained ]
 
   let null = `None
   let logger logfile = `Logger logfile
@@ -16,10 +24,13 @@ module Authlet = struct
     in
     
     `Remote ((host, port_v), cert) 
+  
+  let contain authlet = 
+    match authlet with
+    | other -> other
 end
 
 module Authenticator = struct
-  
   let logger path (r_host, r_port) = 
     lwt oc = Lwt_io.open_file ~mode:Lwt_io.Output path in
     return begin
@@ -41,7 +52,7 @@ module Authenticator = struct
         (* TODO: pass cert file as argument to authlet *)
         lwt auth = X509_lwt.authenticator (`Ca_file "/home/jocbe/sdev/ConsT/certs/demoCA.crt") in
         lwt (ic, oc) = Tls_lwt.connect auth (ts_host, ts_port) in
-        Lwt_io.write_value oc ((r_host, r_port), ((c, stack), host));
+        Lwt_io.write_value oc (`Single ((r_host, r_port), ((c, stack), host)));
 	lwt resp = Lwt_io.read_value ic in
         let res = match resp with
 	  | `Ok _ -> "Trusted."
@@ -50,13 +61,13 @@ module Authenticator = struct
 	in
         Lwt_io.printf "GOT: %s\n" res;
         return resp
-      end
+      end 
 end
 
 module Comp = struct
   type mode = [ `Strict | `Allow_failures ] 
   (* (number of authenticators to execute * number of authenticators that need to return `Ok) * ((authlet * priority (lower = higher priority)) list)  *)
-  type t = [ `Comp of (int * int * mode) * ((Authlet.t * int) list) | `Single of Authlet.t ]
+  type t = [ `Comp of (int * int * mode) * ((Authlet.gen * int) list) | `Single of Authlet.gen ]
 
   let single authlet = `Single authlet
   let comp (num_execute, num_ok, mode) (authlet, priority) = `Comp ((num_execute, num_ok, mode), [(authlet, priority)])
@@ -163,7 +174,8 @@ module Conf = struct
           return (List.nth errl 0)
         else 
   	  return (List.nth resl 0)
-    end
+    end 
+    
 end
 
 
