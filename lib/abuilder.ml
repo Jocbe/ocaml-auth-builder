@@ -31,6 +31,8 @@ module Authlet = struct
 end
 
 module Authenticator = struct
+  exception Unexpected_response of string
+
   let logger path (r_host, r_port) = 
     lwt oc = Lwt_io.open_file ~mode:Lwt_io.Output path in
     return begin
@@ -54,13 +56,21 @@ module Authenticator = struct
         lwt (ic, oc) = Tls_lwt.connect auth (ts_host, ts_port) in
         Lwt_io.write_value oc (`Single ((r_host, r_port), ((c, stack), host)));
 	lwt resp = Lwt_io.read_value ic in
-        let res = match resp with
-	  | `Ok _ -> "Trusted."
-          | `Fail _ -> "NOT trusted!"
+        let msg = match resp with
+	  | `Unsupported -> "Server does not support single requests!"
+          | `Single `Ok _ -> "Trusted."
+          | `Single `Fail _ -> "NOT trusted!"
+	  | `Policy _ -> "Expected `Single, got `Policy"
           | _ -> "ERROR: unexpected response."
 	in
-        Lwt_io.printf "GOT: %s\n" res;
-        return resp
+	let res = match resp with
+	  | `Single r -> r
+	  | `Policy _ -> raise (Unexpected_response "Expected a `Single response, got a `Policy")
+	  | `Unsupported -> raise (Unexpected_response "Server does not support `Single requests")
+	  | _ -> raise (Unexpected_response "Got an unexpected response from server")
+	in
+        Lwt_io.printf "GOT: %s\n" msg;
+        return res
       end 
 end
 
