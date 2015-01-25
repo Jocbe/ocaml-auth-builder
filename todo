@@ -3,4 +3,7 @@ Update README
 Exceptions
 Cleanup
 
+append to log files instead of overwriting them
+  add more info to log files / improve entries
+
 support for policy query to server instead of individual per-connection queries
