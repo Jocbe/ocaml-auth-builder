@@ -1,19 +1,19 @@
 open Lwt
 
 module Authlet = struct
-  type t = [
-    | `None
-    | `Logger of string
-    | `Remote of (string * int) * Certificate.certificate option
+  type with_depend = [
+    | `Ca_file of string
+    | `Ca_dir of string
   ]
   
   type self_contained = [
     | `None
     | `Logger of string
     | `Remote of (string * int) * Certificate.certificate option
+    | `Ca_list of X509.Cert.t list
   ]
 
-  type gen = [ t | self_contained ]
+  type t = [ self_contained | with_depend ]
 
   let null = `None
   let logger logfile = `Logger logfile
@@ -26,8 +26,17 @@ module Authlet = struct
     `Remote ((host, port_v), cert) 
   
   let contain authlet = 
-    match authlet with
-    | other -> other
+      match authlet with
+      | `Ca_file path -> 
+	lwt cert_list = X509_lwt.certs_of_pem path in
+	return (`Ca_list cert_list)
+      | `Ca_dir path ->
+	lwt cert_list = X509_lwt.certs_of_pem_dir path in
+        return (`Ca_list cert_list)
+      | `None -> return (`None)
+      | `Logger l -> return (`Logger l)
+      | `Remote r -> return (`Remote r)
+      | `Ca_list l -> return (`Ca_list l)
 end
 
 module Authenticator = struct
@@ -72,12 +81,22 @@ module Authenticator = struct
         Lwt_io.printf "GOT: %s\n" msg;
         return res
       end 
+
+  let ca_list cas =
+    let now = Unix.gettimeofday () in
+    return (X509.Authenticator.chain_of_trust ~time:now cas)
+  let ca_file path =
+    lwt cert_list = X509_lwt.certs_of_pem path in
+    ca_list cert_list
+  let ca_dir path =
+    lwt cert_list = X509_lwt.certs_of_pem_dir path in
+    ca_list cert_list
 end
 
 module Comp = struct
   type mode = [ `Strict | `Allow_failures ] 
   (* (number of authenticators to execute * number of authenticators that need to return `Ok) * ((authlet * priority (lower = higher priority)) list)  *)
-  type t = [ `Comp of (int * int * mode) * ((Authlet.gen * int) list) | `Single of Authlet.gen ]
+  type t = [ `Comp of (int * int * mode) * ((Authlet.t * int) list) | `Single of Authlet.t ]
 
   let single authlet = `Single authlet
   let comp (num_execute, num_ok, mode) (authlet, priority) = `Comp ((num_execute, num_ok, mode), [(authlet, priority)])
@@ -132,6 +151,9 @@ module Conf = struct
       | `None -> return X509.Authenticator.null
       | `Logger log -> Authenticator.logger log host_info
       | `Remote ((ts_host, ts_port), ts_cert) -> Authenticator.remote (ts_host, ts_port) ts_cert host_info
+      | `Ca_file path -> Authenticator.ca_file path
+      | `Ca_dir path -> Authenticator.ca_dir path
+      | `Ca_list certs -> Authenticator.ca_list certs
     in
     let compile_p_authlet (authlet, _) = compile_authlet authlet in
     let compile_comp ((max_queries, num_ok, mode), auths) host_info = 
