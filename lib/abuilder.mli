@@ -17,6 +17,9 @@ module Authlet : sig
   val null : t
   val logger : string -> t
   val remote : ?cert:Certificate.certificate -> ?port:int -> string -> t
+  val ca_file : string -> t
+  val ca_dir : string -> t
+  val ca_list : X509.Cert.t list -> t
 
   val contain : t -> self_contained Lwt.t
 end

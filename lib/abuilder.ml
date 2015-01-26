@@ -22,8 +22,10 @@ module Authlet = struct
       | None -> 443
       | Some p -> p
     in
-    
     `Remote ((host, port_v), cert) 
+  let ca_file path = `Ca_file path
+  let ca_dir path = `Ca_dir path
+  let ca_list cas = `Ca_list cas
   
   let contain authlet = 
       match authlet with
