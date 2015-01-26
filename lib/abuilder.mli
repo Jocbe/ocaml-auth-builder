@@ -33,6 +33,7 @@ module Comp : sig
   val add : t -> ( Authlet.t * int) -> t
   val update_comp_data : t -> ( int * int * mode) -> t
 
+  val contain : t -> t Lwt.t
 end
 
 module Conf : sig
@@ -47,4 +48,6 @@ module Conf : sig
   val conf_to_string : t -> string
   val string_to_conf : string -> t
   val build : t -> (string * int) -> X509.Authenticator.t Lwt.t
+
+  val contain : t -> t Lwt.t
 end

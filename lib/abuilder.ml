@@ -111,6 +111,18 @@ module Comp = struct
     | `Comp (c_data, aas) -> `Comp (new_data, aas)
     | _ -> raise (Invalid_argument "Expected `Comp composition")
 
+  let contain comp =
+    let contain_pair (authlet, priority) = 
+      lwt contained = Authlet.contain authlet in
+      return (contained, priority)
+    in
+    match comp with
+    | `Single a -> 
+      lwt new_a = Authlet.contain a in
+      return (`Single new_a)
+    | `Comp (c_data, aas) -> 
+      lwt new_aas = Lwt_list.map_p contain_pair aas in
+      return (`Comp (c_data, new_aas))
 end
 
 module Conf = struct
@@ -210,6 +222,8 @@ module Conf = struct
   	  return (List.nth resl 0)
     end 
     
+  let contain conf = 
+    Lwt_list.map_p Comp.contain conf
 end
 
 
