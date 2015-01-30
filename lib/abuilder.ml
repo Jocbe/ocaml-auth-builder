@@ -4,12 +4,13 @@ module Authlet = struct
   type with_depend = [
     | `Ca_file of string
     | `Ca_dir of string
+    | `Remote_ca_file of (string * int) * string
   ]
   
   type self_contained = [
     | `None
     | `Logger of string
-    | `Remote of (string * int) * Certificate.certificate option
+    | `Remote of (string * int) * X509.Cert.t list option
     | `Ca_list of X509.Cert.t list
   ]
 
@@ -22,7 +23,13 @@ module Authlet = struct
       | None -> 443
       | Some p -> p
     in
-    `Remote ((host, port_v), cert) 
+    `Remote ((host, port_v), cert)
+  let remote_ca_file c_path ?port:port host = 
+    let port_v = match port with
+      | None -> 443
+      | Some p -> p
+    in
+    `Remote_ca_file ((host, port_v), c_path)
   let ca_file path = `Ca_file path
   let ca_dir path = `Ca_dir path
   let ca_list cas = `Ca_list cas
@@ -35,6 +42,9 @@ module Authlet = struct
       | `Ca_dir path ->
 	lwt cert_list = X509_lwt.certs_of_pem_dir path in
         return (`Ca_list cert_list)
+      | `Remote_ca_file (host, c_path) -> 
+	lwt cert_list = X509_lwt.certs_of_pem c_path in
+	return (`Remote (host, Some cert_list))
       | `None -> return (`None)
       | `Logger l -> return (`Logger l)
       | `Remote r -> return (`Remote r)
@@ -61,11 +71,14 @@ module Authenticator = struct
   let remote (ts_host, ts_port) ts_c (r_host, r_port) =
     return begin
       fun ?host:host (c, stack) ->
-        (* TODO: how best to authenticate here? *)
-        (* TODO: pass cert file as argument to authlet *)
-        lwt auth = X509_lwt.authenticator (`Ca_file "/home/jocbe/sdev/ConsT/certs/demoCA.crt") in
+        let now = Unix.gettimeofday () in
+	let auth = match ts_c with
+	| Some c -> X509.Authenticator.chain_of_trust ~time:now c
+	| None -> X509.Authenticator.null
+	in
+	(*lwt auth = X509_lwt.authenticator (`Ca_file "/home/jocbe/sdev/ConsT/certs/demoCA.crt") in*)
         lwt (ic, oc) = Tls_lwt.connect auth (ts_host, ts_port) in
-        Lwt_io.write_value oc (`Single ((r_host, r_port), ((c, stack), host)));
+        lwt () = Lwt_io.write_value oc (`Single ((r_host, r_port), ((c, stack), host))) in
 	lwt resp = Lwt_io.read_value ic in
         let msg = match resp with
 	  | `Unsupported -> "Server does not support single requests!"
@@ -80,10 +93,14 @@ module Authenticator = struct
 	  | `Unsupported -> raise (Unexpected_response "Server does not support `Single requests")
 	  | _ -> raise (Unexpected_response "Got an unexpected response from server")
 	in
-        Lwt_io.printf "GOT: %s\n" msg;
+        lwt () = Lwt_io.printf "GOT: %s\n" msg in
         return res
       end 
 
+  let remote_ca_file ts_info c_path r_info =
+    lwt cert_list = X509_lwt.certs_of_pem c_path in
+    remote ts_info (Some cert_list) r_info
+  
   let ca_list cas =
     let now = Unix.gettimeofday () in
     return (X509.Authenticator.chain_of_trust ~time:now cas)
@@ -131,6 +148,7 @@ module Conf = struct
   let new_conf = []
   let from_authlet authlet = [`Single authlet]
   let from_comp comp = [comp]
+  let from_a_list list = Lwt_list.map_p (fun authlet -> return (`Single authlet)) list
   let add_authlet conf authlet = (`Single authlet) :: conf
   let add conf comp = comp :: conf
   
@@ -164,7 +182,8 @@ module Conf = struct
       match authlet with
       | `None -> return X509.Authenticator.null
       | `Logger log -> Authenticator.logger log host_info
-      | `Remote ((ts_host, ts_port), ts_cert) -> Authenticator.remote (ts_host, ts_port) ts_cert host_info
+      | `Remote (ts_info, ts_cert) -> Authenticator.remote ts_info ts_cert host_info
+      | `Remote_ca_file (ts_info, path) -> Authenticator.remote_ca_file ts_info path host_info
       | `Ca_file path -> Authenticator.ca_file path
       | `Ca_dir path -> Authenticator.ca_dir path
       | `Ca_list certs -> Authenticator.ca_list certs
