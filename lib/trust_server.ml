@@ -1,6 +1,6 @@
 open Lwt
 
-type client_policy = Client.client_policy
+type client_policy = Trust_client.client_policy
 (*type server_policy = Abuilder.Conf.t*)
 type response = [ `Policy of client_policy | `Single of X509.Authenticator.res | `Unsupported ]
 
@@ -16,8 +16,8 @@ let run_server ?server_conf ?client_policy sock_addr max_con cert_key_pair =
     match client_policy with
     | None -> return None
     | Some p -> 
-      lwt new_c = Abuilder.Conf.contain p.Client.conf in
-      return (Some (Client.replace_field ~conf:new_c p))
+      lwt new_c = Abuilder.Conf.contain p.Trust_client.conf in
+      return (Some (Trust_client.replace_field ~conf:new_c p))
   in
       
   let worker ic oc sockaddr () =

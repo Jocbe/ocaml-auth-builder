@@ -13,6 +13,6 @@ Description:
 
 Library "abuilder"
   Path            : lib/
-  Modules         : Abuilder, Trust_server, Client
+  Modules         : Abuilder, Trust_server, Trust_client
   Pack            : false
   BuildDepends    : x509, tls, lwt, lwt.syntax
