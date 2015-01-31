@@ -68,23 +68,22 @@ let rec update_policy ?force policy attempts =
 
 let new_client_object policy =
   object
-    val mutable policy = ref policy
+    val mutable policy = policy
     method connect (host, port) = begin
-      let p = !policy in
       let now = Unix.gettimeofday () in
-      lwt poly = update_policy !policy 10 in
-      policy := poly;
+      lwt poly = update_policy policy 10 in
+      policy <- poly;
       (*let () = if p.use_until < now && p.use_until >= 0.0 then
         lwt poly = update_policy !policy 10 in
         return (policy := poly)
       in*)
 		  
-      lwt auth = Abuilder.Conf.build !policy.conf (host, port) in
+      lwt auth = Abuilder.Conf.build policy.conf (host, port) in
       Tls_lwt.connect auth (host, port)
     end
     method force_update = Printf.printf "Not yet implemented"
-    method get_policy = !policy
-    method set_policy p = policy := p
+    method get_policy = policy
+    method set_policy p = policy <- p
   end
 
 let from_policy policy = 
