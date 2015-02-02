@@ -11,6 +11,7 @@ type t = < run : unit Lwt.t ;
 	   set_conf : Abuilder.Conf.t -> unit ;
 	   rm_conf : unit ;
 	   set_auto_update : ( client_policy -> client_policy option ) -> int -> float -> unit ;
+	   auto_update_mode : [ `Off | `Active | `Lazy ] -> unit ;
 	   start_auto_update : unit ;
 	   stop_auto_update : unit ;
 	 >

@@ -12,6 +12,7 @@ type t = < run : unit Lwt.t ;
 	   set_conf : Abuilder.Conf.t -> unit ;
 	   rm_conf : unit ;
 	   set_auto_update : ( client_policy -> client_policy option ) -> int -> float -> unit ;
+	   auto_update_mode : [ `Off | `Active | `Lazy ] -> unit ;
 	   start_auto_update : unit ;
 	   stop_auto_update : unit ;
          >
@@ -22,9 +23,21 @@ let create ?server_conf ?client_policy sock_addr max_con cert_key_pair =
     val mutable conf = server_conf
     val mutable updater = None
     val mutable auto_update = false
+    val mutable auto_update_mode = `Off
     val mutable update_poll_time = 0
     val mutable update_rest_time = 0.0
-    method run = 
+    method run =
+      let check_for_updates () =
+	match policy with
+	| Some p -> begin
+	  let now = Unix.gettimeofday () in
+	  if auto_update_mode = `Lazy && p.Trust_client.use_until < now +. update_rest_time then
+	    match updater with
+	    | Some f -> policy <- f p
+	    | None -> ()
+	end
+	| None -> ()	    
+      in
       let worker ic oc sockaddr () =
         lwt req = Lwt_io.read_value ic in
         let str = ref "" in
@@ -32,7 +45,10 @@ let create ?server_conf ?client_policy sock_addr max_con cert_key_pair =
           match req with
           | `Policy -> begin
             match policy with
-            | Some p -> str := "Returning client policy."; return (`Policy p)
+            | Some p ->
+	      check_for_updates ();
+	      str := "Returning client policy.";
+	      return (`Policy p)
             | None -> str := "Client policy is NOT SUPPORTED!"; return `Unsupported
           end
           | `Single ((r_host, r_port), ((c, stack), host)) -> begin
@@ -81,6 +97,7 @@ let create ?server_conf ?client_policy sock_addr max_con cert_key_pair =
       updater <- Some f;
       update_poll_time <- poll_time;
       update_rest_time <- rest_time
+    method auto_update_mode m = auto_update_mode <- m
     method start_auto_update = 
       match updater with
       | None -> ()

@@ -55,7 +55,7 @@ module Authenticator = struct
   exception Unexpected_response of string
 
   let logger path (r_host, r_port) = 
-    lwt oc = Lwt_io.open_file ~mode:Lwt_io.Output path in
+    lwt oc = Lwt_io.open_file ~flags:[Unix.O_APPEND; Unix.O_CREAT; Unix.O_WRONLY] ~mode:Lwt_io.Output path in
     return begin
       fun ?host:host (c, stack) ->
         let hst = match host with
@@ -65,7 +65,7 @@ module Authenticator = struct
         in
         let c_str = Cstruct.to_string (Certificate.cs_of_cert c) in
         Lwt_io.(write_line oc ("\nConnecting to '" ^ r_host ^ ":" ^ (string_of_int r_port) ^ "' (" ^ hst ^ ") with certificate:")
-             >> write_line oc c_str) >> return (`Ok c)
+             >> write_line oc c_str >> close oc) >> return (`Ok c)
     end
 
   let remote (ts_host, ts_port) ts_c (r_host, r_port) =
