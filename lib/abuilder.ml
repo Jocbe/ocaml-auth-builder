@@ -14,6 +14,10 @@ module Authlet = struct
     | `Ca_list of X509.Cert.t list
   ]
 
+  type cache = [
+    | `Simple of int * float
+  ]
+
   type t = [ self_contained | with_depend ]
 
   let null = `None
@@ -63,9 +67,22 @@ module Authenticator = struct
           | Some (`Wildcard s) -> s
 	  | Some (`Strict s) -> s
         in
-        let c_str = Cstruct.to_string (Certificate.cs_of_cert c) in
-        Lwt_io.(write_line oc ("\nConnecting to '" ^ r_host ^ ":" ^ (string_of_int r_port) ^ "' (" ^ hst ^ ") with certificate:")
-             >> write_line oc c_str >> close oc) >> return (`Ok c)
+        let c_str = Cstruct.to_string (Nocrypto.Base64.encode (Certificate.cs_of_cert c)) in
+	let t = Unix.localtime (Unix.time ()) in
+        let soi = fun i -> 
+	  let s = string_of_int i in
+	  if i > 9 then
+	    s
+	  else
+	    "0" ^ s
+	in
+	let open Unix in
+	let msg = String.concat "\n" [
+	  "[" ^ soi (t.tm_year + 1900) ^ "-" ^ soi t.tm_mon ^ "-" ^ soi t.tm_mday ^ "_" ^ soi t.tm_hour ^ ":" ^ soi t.tm_min ^ ":" ^ soi t.tm_sec ^ "] "
+	    ^ "Connecting to '" ^ r_host ^ ":" ^ soi r_port ^ "' (" ^ hst ^ ") with cert:" ;
+	  "-----BEGIN CERTIFICATE-----" ; c_str ; "-----END CERTIFICATE-----"
+	] in
+        Lwt_io.(write_line oc msg >> close oc) >> return (`Ok c)
     end
 
   let remote (ts_host, ts_port) ts_c (r_host, r_port) =
