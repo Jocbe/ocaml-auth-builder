@@ -63,7 +63,9 @@ let rec update_policy ?force policy attempts =
 	 else
 	   raise (Failure "Max attempts exceeded")
        else
-	 return p
+	 lwt prep_caches = Abuilder.Conf.prepare p.conf in
+         let poly = replace_field ~conf:prep_caches p in
+	 return poly
     | _ -> raise (Abuilder.Authenticator.Unexpected_response "Expected `Policy")
 
 let new_client_object policy =
@@ -86,11 +88,12 @@ let new_client_object policy =
     method set_policy p = policy <- p
   end
 
-let from_policy policy = 
+let of_policy policy = 
   lwt contained_conf = Abuilder.Conf.contain policy.conf in
-  return (new_client_object (replace_field ~conf:contained_conf policy))
+  lwt cont_prep_conf = Abuilder.Conf.prepare contained_conf in
+  return (new_client_object (replace_field ~conf:cont_prep_conf policy))
 
-let from_ts_info ((host, port), conf) =
+let of_ts_info ((host, port), conf) =
   lwt auth = Abuilder.Conf.build conf (host, port) in
   lwt (ic, oc) = Tls_lwt.connect auth (host, port) in
   lwt resp = Lwt_io.(write_value oc `Policy >> read_value ic) in
@@ -99,4 +102,4 @@ let from_ts_info ((host, port), conf) =
     | `Policy p -> p
     | _ -> raise (Failure "Couldn't retrieve policy")
   in
-  return (new_client_object policy)
+  of_policy policy

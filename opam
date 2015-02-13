@@ -1,6 +1,6 @@
 opam-version: "1.2"
 name:         "auth-builder"
-version:      "0.0.1"
+version:      "0.1.0"
 homepage:     "https://github.com/Jocbe/ocaml-auth-builder"
 dev-repo:     "https://github.com/Jocbe/ocaml-auth-builder.git"
 bug-reports:  "https://github.com/Jocbe/ocaml-auth-builder/issues"

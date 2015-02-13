@@ -11,9 +11,9 @@ type t = < run : unit Lwt.t ;
 	   get_conf : Abuilder.Conf.t option ;
 	   set_conf : Abuilder.Conf.t -> unit ;
 	   rm_conf : unit ;
-	   set_auto_update : ( client_policy -> client_policy option ) -> int -> float -> unit ;
+	   set_auto_update : ( client_policy -> client_policy option ) -> float -> float -> unit ;
 	   auto_update_mode : [ `Off | `Active | `Lazy ] -> unit ;
-	   start_auto_update : unit ;
+	   start_auto_update : unit Lwt.t ;
 	   stop_auto_update : unit ;
          >
 
@@ -24,7 +24,7 @@ let create ?server_conf ?client_policy sock_addr max_con cert_key_pair =
     val mutable updater = None
     val mutable auto_update = false
     val mutable auto_update_mode = `Off
-    val mutable update_poll_time = 0
+    val mutable update_poll_time = 0.0
     val mutable update_rest_time = 0.0
     method run =
       let check_for_updates () =
@@ -72,14 +72,14 @@ let create ?server_conf ?client_policy sock_addr max_con cert_key_pair =
       return ()*)
       in
       let rec listener server_socket =
-        try_lwt
-          lwt ((ic, oc), sockaddr) = Tls_lwt.accept cert_key_pair server_socket in
-          Lwt.async (worker ic oc sockaddr); return ();
-          listener server_socket
+        lwt () = begin try_lwt
+	  lwt ((ic, oc), sockaddr) = Tls_lwt.accept cert_key_pair server_socket in
+	  Lwt.async (worker ic oc sockaddr);
+	  return ();
         with
-          Tls_lwt.Tls_failure _ -> begin
+          Tls_lwt.Tls_failure _ -> 
             Lwt_io.print "TLS failure when client connecting\n";
-          end;
+        end in
         listener server_socket
       in
       let server_socket = Lwt_unix.socket Lwt_unix.PF_INET Lwt_unix.SOCK_STREAM 0 in
@@ -99,19 +99,20 @@ let create ?server_conf ?client_policy sock_addr max_con cert_key_pair =
       update_rest_time <- rest_time
     method auto_update_mode m = auto_update_mode <- m
     method start_auto_update = 
+      lwt () = Lwt_unix.sleep update_poll_time in
       match updater with
-      | None -> ()
+      | None -> return ()
       | Some f ->
 	match policy with
-	| None -> ()
+	| None -> return ()
 	| Some p ->
 	  auto_update <- true;
 	  while auto_update do
 	    let now = Unix.gettimeofday () in
 	    if (now +. update_rest_time) > p.Trust_client.use_until && p.Trust_client.use_until > 0.0 then
 	      policy <- f p;
-	    Unix.sleep update_poll_time
-	  done
+	  done;
+	  return ()
     method stop_auto_update = auto_update <- false
   end
 

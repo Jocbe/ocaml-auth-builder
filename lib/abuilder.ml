@@ -1,5 +1,12 @@
 open Lwt
 
+let _LOGLEVEL = 6
+let d l m =
+  if l <= _LOGLEVEL then
+    Lwt_io.printf "level %i: %s" l m
+  else
+    return ()
+
 module Authlet = struct
   type with_depend = [
     | `Ca_file of string
@@ -12,10 +19,6 @@ module Authlet = struct
     | `Logger of string
     | `Remote of (string * int) * X509.Cert.t list option
     | `Ca_list of X509.Cert.t list
-  ]
-
-  type cache = [
-    | `Simple of int * float
   ]
 
   type t = [ self_contained | with_depend ]
@@ -39,20 +42,112 @@ module Authlet = struct
   let ca_list cas = `Ca_list cas
   
   let contain authlet = 
-      match authlet with
-      | `Ca_file path -> 
-	lwt cert_list = X509_lwt.certs_of_pem path in
-	return (`Ca_list cert_list)
-      | `Ca_dir path ->
-	lwt cert_list = X509_lwt.certs_of_pem_dir path in
-        return (`Ca_list cert_list)
-      | `Remote_ca_file (host, c_path) -> 
-	lwt cert_list = X509_lwt.certs_of_pem c_path in
-	return (`Remote (host, Some cert_list))
-      | `None -> return (`None)
-      | `Logger l -> return (`Logger l)
-      | `Remote r -> return (`Remote r)
-      | `Ca_list l -> return (`Ca_list l)
+    match authlet with
+    | `Ca_file path -> 
+      lwt cert_list = X509_lwt.certs_of_pem path in
+      return (`Ca_list cert_list)
+    | `Ca_dir path ->
+      lwt cert_list = X509_lwt.certs_of_pem_dir path in
+      return (`Ca_list cert_list)
+    | `Remote_ca_file (host, c_path) -> 
+      lwt cert_list = X509_lwt.certs_of_pem c_path in
+      return (`Remote (host, Some cert_list))
+    | `None -> return `None
+    | `Logger l -> return (`Logger l)
+    | `Remote r -> return (`Remote r)
+    | `Ca_list l -> return (`Ca_list l)
+end
+
+module Cache = struct
+  type t = [ `Simple of float ]
+  type auth_res = [ `Ok of Certificate.certificate | `Fail of Certificate.certificate_failure ]
+  type res = [ `Res of auth_res | `Not_found ]
+  type compiled = < 
+    get_res : ( string * int ) -> ?host:Certificate.host -> Certificate.stack -> res ;
+    get_cert : ( string * int ) -> Certificate.certificate ;
+    set : ( string * int ) -> ?ttl:float -> Certificate.certificate -> auth_res -> unit ;
+    remove_stale_entries : unit
+  >
+  module CertSet = Set.Make (
+    struct 
+      type t = ( (string * int) * ((float * Certificate.certificate * auth_res) option) )
+      let compare = fun ((host1, port1), _) ((host2, port2), _) -> 
+	let host_comp_res = Pervasives.compare host1 host2 in
+	if host_comp_res != 0 then
+	  host_comp_res
+	else
+	  Pervasives.compare port1 port2
+    end
+  )
+
+  let simple ttl = 
+    `Simple ttl
+
+  let c_simple default_ttl = object
+    val mutable certs = CertSet.empty
+    
+    method get_res (r_host, r_port) ?host:host (c, stack) =
+      try
+	let (expiry_time, ccert, cres) =
+	  match CertSet.find ((r_host, r_port), None) certs with
+	  | (_, None) ->
+	    certs <- CertSet.remove ((r_host, r_port), None) certs;
+	    raise Not_found
+	  | (_, Some (t, c, r)) -> (t, c, r)
+	in
+	let now = Unix.gettimeofday () in
+	if now > expiry_time then
+	  begin
+	    certs <- CertSet.remove ((r_host, r_port), None) certs;
+	    `Not_found
+	  end
+	else if Pervasives.compare c ccert != 0 then
+	  `Not_found
+	else
+	  `Res cres
+      with Not_found -> `Not_found
+
+    method get_cert (r_host, r_port) =
+      let (time, cert, res) = match CertSet.find ((r_host, r_port), None) certs with
+	| (_, None) ->
+	  certs <- CertSet.remove ((r_host, r_port), None) certs;
+	  raise Not_found
+	| (_, Some (t, c, r)) -> (t, c, r)
+      in
+      let now = Unix.gettimeofday () in
+      if now > time then
+	begin
+	  certs <- CertSet.remove ((r_host, r_port), None) certs;
+	  raise Not_found
+	end
+      else
+	match res with
+	| `Ok _ -> cert
+	| _ -> raise Not_found
+
+    method set (r_host, r_port) ?ttl cert res =
+      let tmp_certs = CertSet.remove ((r_host, r_port), None) certs in
+      let now = Unix.gettimeofday () in
+      let expiry_time = match ttl with
+	| None -> now +. default_ttl
+	| Some n -> now +. n
+      in
+      let entry = ((r_host, r_port), Some (expiry_time, cert, res)) in
+      certs <- CertSet.add entry tmp_certs
+
+    method remove_stale_entries =
+      let now = Unix.gettimeofday () in
+      let filter_fun = fun (_, data) -> 
+	match data with
+	| None -> false
+	| Some (t, _, _) -> t > now
+      in
+      certs <- CertSet.filter filter_fun certs
+  end
+
+  let compile cache = 
+    match cache with
+    | `Simple ttl -> return (c_simple ttl)
 end
 
 module Authenticator = struct
@@ -110,7 +205,7 @@ module Authenticator = struct
 	  | `Unsupported -> raise (Unexpected_response "Server does not support `Single requests")
 	  | _ -> raise (Unexpected_response "Got an unexpected response from server")
 	in
-        lwt () = Lwt_io.printf "GOT: %s\n" msg in
+        lwt () = d 4 ("GOT: " ^  msg ^ "\n") in
         return res
       end 
 
@@ -134,11 +229,20 @@ module Comp = struct
   (* (number of authenticators to execute * number of authenticators that need to return `Ok) * ((authlet * priority (lower = higher priority)) list)  *)
   type t = [ `Comp of (int * int * mode) * ((Authlet.t * int) list) | `Single of Authlet.t ]
 
-  let single authlet = `Single authlet
-  let comp (num_execute, num_ok, mode) (authlet, priority) = `Comp ((num_execute, num_ok, mode), [(authlet, priority)])
-  let add comp p_authlet = 
+  let single ?priority authlet = 
+    let p = match priority with
+      | None -> 0
+      | Some p -> p
+    in (`Single authlet, p)
+  let comp ?priority (num_execute, num_ok, mode) authlet = 
+    let p = match priority with
+      | None -> 0
+      | Some p -> p
+    in
+    (`Comp ((num_execute, num_ok, mode), [authlet]), p)
+  let add comp authlet = 
     match comp with
-    | `Comp (c_data, aas) -> `Comp (c_data, p_authlet :: aas)
+    | `Comp (c_data, aas) -> `Comp (c_data, authlet :: aas)
     | _ -> raise (Invalid_argument "Expected `Comp composition")
   let update_comp_data comp new_data = 
     match comp with
@@ -160,20 +264,63 @@ module Comp = struct
 end
 
 module Conf = struct
-  type t = Comp.t list
+  type conf_item = Comp.t * int
+  type cache_item = Cache.t * int
+  type t = { auths  : conf_item list ; 
+	     cache_specs : cache_item list;
+	     caches : ( Cache.compiled * int ) list }
 
-  let new_conf = []
-  let from_authlet authlet = [`Single authlet]
-  let from_comp comp = [comp]
-  let from_a_list list = Lwt_list.map_p (fun authlet -> return (`Single authlet)) list
-  let add_authlet conf authlet = (`Single authlet) :: conf
-  let add conf comp = comp :: conf
+  let extract n = 
+    match n with
+    | None -> 0
+    | Some n -> n
+  	
+  let empty_conf = { auths = []; cache_specs = []; caches = [] }
+  let new_conf auths cache_specs = { auths = auths; cache_specs = cache_specs; caches = [] }
+  let of_authlet ?priority authlet = 
+    { auths = [(`Single authlet, extract priority)]; cache_specs = []; caches = [] }
+  let of_comp ?priority comp = 
+    { auths = [(comp, extract priority)]; cache_specs = []; caches = [] }
+  let of_a_list ?priority list = 
+    lwt a = Lwt_list.map_p (fun authlet -> return (`Single authlet, extract priority)) list in
+    return { auths = a; cache_specs = []; caches = [] }
+  let of_a_plist list = 
+    lwt a = Lwt_list.map_p (fun (authlet, p) -> return (`Single authlet, p)) list in
+    return { auths = a; cache_specs = []; caches = [] }
+  let add_authlet conf ?priority authlet = { 
+    auths = (`Single authlet, extract priority) :: conf.auths;
+    cache_specs = conf.cache_specs; 
+    caches = conf.caches
+  }
+  let add conf ?priority comp = {
+    auths = (comp, extract priority) :: conf.auths;
+    cache_specs = conf.cache_specs;
+    caches = conf.caches
+  }
+  let add_cache conf ?priority cache = { 
+    auths = conf.auths;
+    cache_specs = (cache, extract priority) :: conf.cache_specs;
+    caches = conf.caches
+  }
+  (*let add_caches conf caches = {
+    auths = conf.auths;
+    cache_specs = *)
   
   let conf_to_string conf =
     "NOT YET IMPLEMENTED" 
   let string_to_conf str =
-    [`Single `None]
+    { auths = [(`Single `None, 0)]; cache_specs = []; caches = [] }
 
+  let prepare conf = 
+    let compile_cache = fun (c, p) -> 
+      lwt compiled = Cache.compile c in
+      return (compiled, p)
+    in
+    lwt compiled = Lwt_list.map_p compile_cache conf.cache_specs in
+    return { auths = conf.auths; cache_specs = []; caches = compiled }
+    
+    
+      
   let build conf (r_host, r_port) =
     (* WARNING: does not preserve order of items in first half returned *)
     let split_list xxs i =
@@ -228,8 +375,8 @@ module Conf = struct
 	    else
 	      let (next_candidates, rest) = split_list auths num_ok in
 	      lwt resl = Lwt_list.map_p (authenticate ?host:host (c, stack)) next_candidates in
-	      let (n_o, n_f, n_e) = count_results resl 0 0 0 in
-              if n_o = num_ok then
+      	      let (n_o, n_f, n_e) = count_results resl 0 0 0 in
+	      if n_o = num_ok then
 		return (List.nth resl 0)
 	      else if mode = `Strict && n_f > 0 then
 		lwt errl = Lwt_list.filter_p filterp resl in
@@ -243,23 +390,104 @@ module Conf = struct
     in 
     let compile host_info comp = 
       match comp with
-      | `Single a -> compile_authlet a host_info
-      | `Comp c -> compile_comp c host_info
+      | (`Single a, p) -> 
+	lwt auth = compile_authlet a host_info in
+        return (auth, p)
+      | (`Comp c, p) -> 
+	lwt comp = compile_comp c host_info in
+        return (comp, p)
     in
-    (* Compare the returned certs to each other? *)
-    lwt authl = Lwt_list.map_p (compile (r_host, r_port)) conf  in
-    return begin
-      fun ?host:host (c, stack) -> 
-        lwt resl = Lwt_list.map_p (authenticate ?host:host (c, stack)) authl in
-        lwt errl = Lwt_list.filter_p filterp resl in
-        if List.length errl > 0 then
-          return (List.nth errl 0)
-        else 
-  	  return (List.nth resl 0)
-    end 
+    let extract_errs_pred = fun v -> 
+      let ret = match v with
+        | (_, Some (`Fail _)) -> true
+        | _ -> false
+      in
+      return ret
+    in
+    (* Make sure we don't have any cache_specs that haven't been precompiled ('prepared') yet *)
+    if List.length conf.cache_specs > 0 then
+      raise (Invalid_argument "Caches must be compiled before the conf can be built (hint: use 'prepare conf')")
+    else
+
+      (* Compare the returned certs to each other? *)
+      let comp = fun x -> 
+	lwt compiled = compile (r_host, r_port) x in
+        return (compiled, None)
+      in
+      lwt authl = Lwt_list.map_p comp conf.auths  in
+      let cachl = List.sort (fun (_, p1) (_, p2) -> p1 - p2) conf.caches in
+      return begin
+	fun ?host:host (c, stack) -> 
+        
+	  let rec calc_result authl cachl = 
+	    let calc ?priority ((a, p), prev_res) =
+	      let eval = match priority with
+		| None -> prev_res = None
+		| Some n -> (prev_res = None) && p <= n
+	      in
+	      lwt () = d 7 ("priority is: " ^ (match priority with | None -> "NONE" | Some x -> string_of_int x) ^ "\n") in
+	      if eval then
+		lwt res = authenticate ?host:host (c, stack) a in
+		return ((a, p), Some res)
+	      else
+	        return ((a, p), prev_res)
+	    in
+            let rec get_first_res authl =
+	      match authl with
+	      | [] -> raise (Invalid_argument "No `Ok result found")
+	      | (_, None) :: tail -> get_first_res tail
+	      | (_, Some res) :: _ -> res
+	    in
+	    match cachl with
+	      | [] -> begin
+		lwt resl = Lwt_list.map_p calc authl in
+                lwt errl = Lwt_list.filter_p extract_errs_pred resl in                
+                if List.length errl > 0 then
+		  return (get_first_res errl)
+		else
+		  return (get_first_res resl)
+		end
+              | (cache, priority) :: caches -> 
+		let res = cache#get_res (r_host, r_port) ?host:host (c, stack) in
+		match res with
+		| `Not_found ->
+		  lwt () = d 6 "Cache miss\n" in
+		  calc_result authl caches
+		| `Res (`Fail f) ->
+		  lwt () = d 6 "Cache fail\n" in
+		  return (`Fail f)
+		| `Res (`Ok c) ->
+		  lwt () = d 6 "Cache ok\n" in
+		  lwt resl = Lwt_list.map_p (calc ~priority:priority) authl in
+                  lwt errl = Lwt_list.filter_p extract_errs_pred resl in
+                  if List.length errl > 0 then
+		    return (get_first_res errl)
+		  else
+		    try
+		      let auth_res = get_first_res resl in
+		      return auth_res
+		    with
+		      Invalid_argument _ -> return (`Ok c)
+	  in
+  
+	  (*lwt resl = Lwt_list.map_p (authenticate ?host:host (c, stack)) authl in
+          lwt errl = Lwt_list.filter_p filterp resl in
+          if List.length errl > 0 then
+            return (List.nth errl 0)
+          else 
+  	    return (List.nth resl 0)*)
+          lwt res = calc_result authl cachl in
+	  lwt () = Lwt_list.iter_p (fun (cache, _) -> cache#set (r_host, r_port) ?ttl:None c res; return ()) cachl in
+	  return res
+      end 
     
   let contain conf = 
-    Lwt_list.map_p Comp.contain conf
+    let contain_pair = fun (c, p) ->
+      lwt contained = Comp.contain c in
+      return (contained, p)
+    in
+    lwt contained = Lwt_list.map_p contain_pair conf.auths in
+    return { auths = contained; cache_specs = conf.cache_specs; caches = conf.caches }
 end
 
 
